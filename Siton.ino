@@ -18,6 +18,9 @@ jinak watchdog nefunguje spravne.
 Pouzita nestandartni inicializace dvou typu komunikaci na jedno sw seriove
 rozhrani.
 
+*/
+#define	ksVersionNumber		" sw.v8.2.00     "
+/*
 
 upravy (c) Tomas Chvatal
 verze 8.1.0
@@ -63,7 +66,6 @@ do menu pridana polozka tovarni reset - maze vyrobu a nastaveni
 
 */
 
-#define	ksVersionNumber		" sw.v8.1.00     "
 
 #include <SoftEasyTransfer.h> //https://github.com/madsci1016/Arduino-SoftEasyTransfer
 #include <SoftwareSerial.h>
@@ -80,6 +82,8 @@ do menu pridana polozka tovarni reset - maze vyrobu a nastaveni
 // Settings
 #define		klSkipIntro			false				// pro rychlejsi debug a ladeni [false / true]
 #define		kSet_MaxProud		12
+#define		klLedBlik			true				// ma blikat LED v prav.cas.intervalech
+
 //#define		kSet_MaxProud		10
 #define I2C_Address		0x27 // adresa I2C prevodniku PCF8574T,PCF8574P 0x27 (PCF8574AT 0x3f)
 #define AttinyAddress	0x25 // adresa Attiny desky LCD
@@ -90,11 +94,11 @@ do menu pridana polozka tovarni reset - maze vyrobu a nastaveni
 // pokud by byl krok moc maly, proudove cidlo (se svym limitnim rozlisenim a sumem) 
 // by mohlo vratit MENSI hodnotu i kdyz spravne doslo k NARUSTu vykonu
 #define PWMDUTY_DELTA_PLUS		3
-// o kolik zvedam stridu pri cestovani dolu
+// o kolik snizuji stridu pri cestovani dolu
 #define PWMDUTY_DELTA_MINUS	2
 
 
-SoftwareSerial mySerial(8, 6); //Arduino RX - RS485 RO, Arduino TX - RS485 DI
+SoftwareSerial mySerial(8, 6);					// Arduino RX - RS485 RO = 8, Arduino TX - RS485 DI=6
 #define	hwSerial		Serial						// pro vysilani DEBUG info pres terminal
 
 #define TXenableRS485 7 //RE + DE
@@ -123,10 +127,10 @@ SoftwareSerial mySerial(8, 6); //Arduino RX - RS485 RO, Arduino TX - RS485 DI
 #define Maxproud 1000 //max. proud 10.00A
 #endif
 
-// TomCh ? proc LED na pinu 1 ? (TXD ???) Neni na schematu.
+// LED na pinu 1 (TXD) nepouzivam - chci nechat HW UART pro prenos dat
 //#define runLED 1  // signalizacni LED behu
-#define runLED		LED_BUILTIN
-#define LEDpin		LED_BUILTIN  // signalizacni LED komunikace
+#define pinLedRun				LED_BUILTIN
+#define pinLedKomunik		1	//LED_BUILTIN  // signalizacni LED komunikace
 
 // delka bufferu = casova konstanta filteru
 //static unsigned int iaFiltVykon[4];
@@ -251,7 +255,7 @@ unsigned int holdingdata[20] = {
 	0, 0, 0, 0, 0, 0, 0, 0, 0, 0
 };
 unsigned int cnt_sl;
-Modbus slave(nodeID, 4, TXenableRS485); // slave adresa,SoftwareSerial,RS485 enable pin
+Modbus slave(nodeID, 4, TXenableRS485); // slave adresa,mySoftwareSerial,RS485 enable pin
 
 // Nastav pro LCD piny PCF8574AT a I2C adresu 0x3f(PCF8574T 0x27)
 //                    addr,       en,rw,rs,d4,d5,d6,d7,bl, blpol
@@ -346,14 +350,14 @@ void setup() {
 	lastvyroba = vyroba;
 
 	pinMode(ochrana_pin, INPUT); //vstup stavu nadproudove ochrany
+	
 	pinMode(TXenableRS485, OUTPUT);
 	digitalWrite(TXenableRS485, LOW);
-	pinMode(LEDpin, OUTPUT);
-	pinMode(runLED, OUTPUT);
-	digitalWrite(runLED, LOW);
+	pinMode(pinLedKomunik, OUTPUT);
+	pinMode(pinLedRun, OUTPUT);
+	digitalWrite(pinLedRun, LOW);
 	pinMode(mppt_pin, INPUT_PULLUP);//jumper rezerva
 	pinMode(enable_pin, INPUT_PULLUP);//pin povoleni provozu menice
-
 
 	hwSerial.begin(115200);
 	//hwSerial.println("start");
@@ -361,9 +365,10 @@ void setup() {
 	// softwareSerial pro RS485
 	mySerial.begin(9600);
 	ET.begin(details(emontx), &mySerial);// nastaveni EasyTransfer
-	slave.begin(&mySerial, 9600); // Modbus
-	slave.setID(nodeID);// nastavi Modbus slave adresu
-	
+	// Modbus
+	slave.begin(&mySerial, 9600); 
+	slave.setID(nodeID);						// Modbus slave adresa
+
 	delay(60);
 	lcd.begin(16, 2); // pocet znaku, pocet radku
 	lcd.createChar(1, stupen); // ulozi do LCD symbol stupnu
@@ -492,7 +497,8 @@ void loop() {
 	zobrazeni();
 	if (!rucne) 
 		delay(100); // zpozdeni pokud neni rucni rezim
-	//komunikace();
+	komunikace();
+	
 	//------------------------------------------------------------------------------
 	// zapis vyroby do EEprom po 60 min.
 	currentMillis = millis();
@@ -501,15 +507,18 @@ void loop() {
 		previousWR = currentMillis;
 	}
 	//-----------------------------------------------------------------------------
-	// signalizace behu programu
-	currentMillis = millis();
-	if ((unsigned long)(currentMillis - casLED) >= 1000)
-	{
-		digitalWrite(runLED, HIGH);
-		delay(30);
-		digitalWrite(runLED, LOW);
-		casLED = currentMillis;
-	}
+
+	#if klLedBlik
+		// signalizace behu programu
+		currentMillis = millis();
+		if ((unsigned long)(currentMillis - casLED) >= 1000)
+		{
+			digitalWrite(pinLedRun, HIGH);
+			delay(30);
+			digitalWrite(pinLedRun, LOW);
+			casLED = currentMillis;
+		}
+	#endif
 
 	//--------------------------------Zapis do EEPROM------------------------------
 	// Zapis do EEPROM se provede pokud se vyroba zvysi o 100Wh
@@ -592,13 +601,17 @@ void komunikace()
 			emontx.nodeID = nodeID; // ID solar invertoru
 			emontx.command = 5; // odeslani dat bez pozadavku
 			emontx.address = 15; // adresa emonHUBu
-			digitalWrite(LEDpin, HIGH);// activity LED
+			#if klLedBlik
+				digitalWrite(pinLedKomunik, HIGH);// activity LED
+			#endif
 			delay(15);
 			digitalWrite(TXenableRS485, HIGH);//prepni prevodnik RS485 na vysilani
 			ET.sendData(); // odesli data na emonHUB
 			digitalWrite(TXenableRS485, LOW);
 			delay(20);
-			digitalWrite(LEDpin, LOW); // activity LED
+			#if klLedBlik
+				digitalWrite(pinLedKomunik, LOW); // activity LED
+			#endif
 			casKomunikace = currentMillis;
 		}
 	}
@@ -636,9 +649,11 @@ void komunikace()
 		slave.poll( holdingdata, 20 );
 
 		if (cnt_sl != slave.getOutCnt()) {
-			digitalWrite(LEDpin, HIGH);
-			delay(40);
-			digitalWrite(LEDpin, LOW);
+			#if klLedBlik
+				digitalWrite(pinLedKomunik, HIGH);
+				delay(40);
+				digitalWrite(pinLedKomunik, LOW);
+			#endif
 		}
 		cnt_sl = slave.getOutCnt();
 
@@ -1206,14 +1221,15 @@ void menu_zmenaID() {
 		whichkey = PollKey();
 		switch (whichkey) {
 			case KeyUp:
-			if (hodnota >= 10) hodnota++;
-			if (hodnota > 20) hodnota = 10;
-			break;
+				if (hodnota >= 10) hodnota++;
+				if (hodnota > 20) hodnota = 10;
+				break;
 			case KeyDown:
-			nodeID = hodnota;
-			//slave.setID(nodeID);// nastavi Modbus slave adresu
-			EEPROM_writeAnything(12, nodeID); //uloz do eeprom
-			ulozeno(); break;
+				nodeID = hodnota;
+				//slave.setID(nodeID);// nastavi Modbus slave adresu
+				EEPROM_writeAnything(12, nodeID); //uloz do eeprom
+				ulozeno(); 
+				break;
 		}
 	} while (showStatus);
 }
