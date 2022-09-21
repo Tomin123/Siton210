@@ -23,10 +23,11 @@ rozhrani.
 /*
 
 upravy (c) Tomas Chvatal
+verze 8.2.0
+ - vracena podpora Komunikace()
 verze 8.1.0
  - zlepseno rozliseni/vypocet PROUDU
  - zlepseno rozliseni vykonu - prom. vykon je nyni float (drive int) 
- - vracena podpora Komunikace()
 verze 8.0.0
  - zlepsena ochrana eeprom - zapis vyroby do eeprom se deje pouze pokud se neco vyrobilo (v noci ne)
  - zvysena vyteznost pri slabsim osvetleni - zpomaleno vandrovani do stran MPPT kolena 
